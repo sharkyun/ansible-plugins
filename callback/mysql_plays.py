@@ -1,5 +1,5 @@
 #coding:utf-8
-# (C) 2020,闫顺军, <sharkyunops@126.com>
+# (C) 2020,闫顺军, <sharkyun@aliyun.com><WeChat:y86000153>
 # (c) 2020 Ansible Custom Plugin Project
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
@@ -17,7 +17,7 @@ DOCUMENTATION = '''
      - 需要配置到 ansible.cfg 中 Whitelist
      - 可以被访问的 MySQL 服务器实例
      - Python 版本对应的 pymysql 或者 mysqlclient 模块
-     - 创表语句
+     - 创表语句(注意:这里的表名需要根据选项中 mysql_table 的值一致)
        create table playsresult(
          id int auto_increment primary key,
          user varchar(16) not null,
@@ -104,33 +104,29 @@ except ImportError:
         import pymysql as mysqldb
         pwd = "password"
     except ImportError:
-        raise AnsibleError("没有 pymysql 或 mysqlclient 包。")
+        raise AnsibleError("找不到 pymysql 或 mysqlclient 包。")
 
-
-# NOTE: in Ansible 1.2 or later general logging is available without
-# this plugin, just set ANSIBLE_LOG_PATH as an environment variable
-# or log_path in the DEFAULTS section of your ansible configuration
-# file.  This callback is an example of per hosts logging for those
-# that want it.
 
 
 class CallbackModule(CallbackBase):
     """
-    logs playbook results, per host, in /var/log/ansible/hosts
+    把 playbook 的结果保存到 MySQL 数据库中，默认的库.表是 ansible.playsresult
     """
     CALLBACK_VERSION = 2.0
     CALLBACK_TYPE = 'notification'
-    CALLBACK_NAME = 'log_plays'
+    CALLBACK_NAME = 'mysql_plays'
     CALLBACK_NEEDS_WHITELIST = True
 
     TIME_FORMAT = "%b %d %Y %H:%M:%S"
     MSG_FORMAT = "%(now)s - %(category)s - %(data)s\n\n"
 
     def __init__(self):
-
         super(CallbackModule, self).__init__()
 
     def set_options(self, task_keys=None, var_options=None, direct=None):
+        """
+        用于设置选项和获取选项， 选项包含了自定义的选项
+        """
         super(CallbackModule, self).set_options(task_keys=task_keys, var_options=var_options, direct=direct)
 
         self.mysql_host = self.get_option("mysql_host")
@@ -143,14 +139,15 @@ class CallbackModule(CallbackBase):
         self.user = getpass.getuser()
 
     def _mysql(self):
+        """
+        连接数据库，返回数据库对象和游标对象
+        """
         db_conn={"host": self.mysql_host,
                  "port": self.mysql_port,
                  "user": self.mysql_user,
                  pwd: self.mysql_password,
                  "db": self.mysql_db}
 
-        print("==>", self.mysql_host)
-        print("==>", self.mysql_password)
         db = mysqldb.connect(**db_conn)
 
         cursor= db.cursor()
@@ -161,7 +158,7 @@ class CallbackModule(CallbackBase):
     def _execute_sql(self, host, category, data):
         if isinstance(data, MutableMapping):
             if '_ansible_verbose_override' in data:
-                # avoid logging extraneous data
+                # avoid save extraneous data
                 data = 'omitted'
             else:
                 data = data.copy()
@@ -175,9 +172,10 @@ class CallbackModule(CallbackBase):
               values(%s,%s,%s,%s)
               """.format(self.mysql_table)
 
-        db, cursor = self._mysql()
 
         try:
+            db, cursor = self._mysql()
+            # 执行 sql，记录事件类型和事件结果
             cursor.execute(sql, (host, self.user, category, data))
             db.commit()
         except Exception as e:
@@ -208,3 +206,4 @@ class CallbackModule(CallbackBase):
 
     def playbook_on_not_import_for_host(self, host, missing_file):
         self._execute_sql(host, 'NOTIMPORTED', missing_file)
+
