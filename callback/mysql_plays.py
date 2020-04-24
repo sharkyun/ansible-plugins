@@ -117,9 +117,6 @@ class CallbackModule(CallbackBase):
     CALLBACK_NAME = 'mysql_plays'
     CALLBACK_NEEDS_WHITELIST = True
 
-    TIME_FORMAT = "%b %d %Y %H:%M:%S"
-    MSG_FORMAT = "%(now)s - %(category)s - %(data)s\n\n"
-
     def __init__(self):
         super(CallbackModule, self).__init__()
 
