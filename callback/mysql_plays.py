@@ -84,8 +84,6 @@ DOCUMENTATION = '''
             key: mysql_table
 '''
 
-import os
-import time
 import json
 import getpass
 
@@ -97,15 +95,16 @@ from ansible.module_utils._text import to_native
 
 
 try:
-    import MySQLdb as mysqldb
-    pwd = "passwd"
+    import pymysql as mysqldb
+    pwd = "password"
+    database = "db"
 except ImportError:
     try:
-        import pymysql as mysqldb
-        pwd = "password"
+        import MySQLdb as mysqldb
+        pwd = "passwd"
+        database = "database"
     except ImportError:
-        raise AnsibleError("找不到 pymysql 或 mysqlclient 包。")
-
+        raise AnsibleError("找不到 pymysql 或 mysqlclient 模块。")
 
 
 class CallbackModule(CallbackBase):
@@ -116,6 +115,9 @@ class CallbackModule(CallbackBase):
     CALLBACK_TYPE = 'notification'
     CALLBACK_NAME = 'mysql_plays'
     CALLBACK_NEEDS_WHITELIST = True
+
+    TIME_FORMAT = "%b %d %Y %H:%M:%S"
+    MSG_FORMAT = "%(now)s - %(category)s - %(data)s\n\n"
 
     def __init__(self):
         super(CallbackModule, self).__init__()
@@ -143,9 +145,12 @@ class CallbackModule(CallbackBase):
                  "port": self.mysql_port,
                  "user": self.mysql_user,
                  pwd: self.mysql_password,
-                 "db": self.mysql_db}
+                 database: self.mysql_db}
 
-        db = mysqldb.connect(**db_conn)
+        try:
+            db = mysqldb.connect(**db_conn)
+        except Exception as e:
+            raise AnsibleError("%s" % to_native(e))
 
         cursor= db.cursor()
 
@@ -169,9 +174,9 @@ class CallbackModule(CallbackBase):
               values(%s,%s,%s,%s)
               """.format(self.mysql_table)
 
+        db, cursor = self._mysql()
 
         try:
-            db, cursor = self._mysql()
             # 执行 sql，记录事件类型和事件结果
             cursor.execute(sql, (host, self.user, category, data))
             db.commit()
@@ -180,8 +185,6 @@ class CallbackModule(CallbackBase):
         finally:
             cursor.close()
             db.close()
-
-
 
     def runner_on_failed(self, host, res, ignore_errors=False):
         self._execute_sql(host, 'FAILED', res)
